@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>{{ title }}</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        'github-dark': '#0d1117',
+                        'github-secondary': '#161b22',
+                        'github-border': '#30363d',
+                        'github-text': '#c9d1d9',
+                        'github-text-secondary': '#8b949e',
+                        'github-accent': '#58a6ff',
+                        'github-hover': '#238636'
+                    }
+                }
+            }
+        }
+    </script>
+    <link rel="stylesheet" href="styles.css">
+    <!-- Highlight.js CSS -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+    <!-- Highlight.js JavaScript -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <!-- Дополнительные языки для Highlight.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/python.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/javascript.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/bash.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/json.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/xml.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/css.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/sql.min.js"></script>
+</head>
+<body class="dark bg-github-dark text-github-text font-sans leading-relaxed">
+    <!-- Sidebar -->
+    <nav class="fixed top-0 left-0 bottom-0 w-72 bg-github-secondary border-r border-github-border overflow-y-auto p-6 z-50">
+        <h2 class="text-xl font-semibold mb-6">{{ title }}</h2>
+        {% for topic in topics %}
+        <a class="tab block p-3 my-1 rounded-lg cursor-pointer whitespace-nowrap overflow-hidden text-ellipsis transition-all duration-200 border border-transparent hover:bg-github-hover hover:-translate-y-0.5 {% if loop.first %}bg-github-hover border-github-accent{% endif %}" 
+           data-id="{{ topic.id }}">
+            {{ topic.title|e }} <span class="text-github-text-secondary">({{ topic.messages|length }})</span>
+        </a>
+        {% endfor %}
+    </nav>
+    
+    <!-- Main Content -->
+    <main class="ml-72 p-8 max-w-5xl min-h-screen">
+        {% for topic in topics %}
+        <section id="topic-{{ topic.id }}" class="{% if not loop.first %}section-hidden{% endif %}">
+            <h1 class="text-3xl font-bold mb-8">{{ topic.title|e }}</h1>
+            {% for msg in topic.messages %}
+            <article class="msg border border-github-border rounded-xl mb-6 p-6 bg-github-secondary transition-shadow duration-200 hover:shadow-lg{% if msg.is_service %} border-yellow-500 bg-yellow-900/20{% endif %}{% if msg.skip_reason %} border-orange-500 bg-orange-900/20{% endif %}" id="msg-{{ msg.id }}">
+                <div class="flex justify-between items-start text-sm text-github-text-secondary mb-3">
+                    <div class="flex items-center gap-3">
+                        <span class="font-semibold">#{{ msg.id }}</span>
+                        <span>{{ msg.sender|e }}</span>
+                    </div>
+                </div>
+                
+                {% if msg.is_service %}
+                <div class="mb-3 p-2 bg-yellow-800/30 border border-yellow-600 rounded text-yellow-200 text-sm">
+                    <span class="font-semibold">🔧 Служебное сообщение:</span> {{ msg.service_description|e }}
+                </div>
+                {% endif %}
+                
+                {% if msg.skip_reason %}
+                <div class="mb-3 p-2 bg-orange-800/30 border border-orange-600 rounded text-orange-200 text-sm">
+                    <span class="font-semibold">⚠️ Медиа пропущено:</span> {{ msg.skip_reason|e }}
+                </div>
+                {% endif %}
+                
+                {% if msg.is_reply and msg.reply_to_msg_id %}
+                <div class="mb-3 p-2 bg-blue-800/30 border border-blue-600 rounded text-blue-200 text-sm">
+                    <span class="font-semibold">↩️ Ответ на сообщение:</span> 
+                    <a href="#msg-{{ msg.reply_to_msg_id }}" class="text-blue-400 hover:text-blue-300 underline">#{{ msg.reply_to_msg_id }}</a>
+                </div>
+                {% endif %}
+                
+                <div class="break-words whitespace-pre-wrap">{{ msg.html_content|safe }}</div>
+                
+                {% if msg.reactions %}
+                <div class="mt-3 flex flex-wrap gap-2">
+                    {% for reaction in msg.reactions %}
+                    <span class="inline-flex items-center px-2 py-1 bg-github-border rounded-full text-sm text-github-text-secondary hover:bg-github-hover transition-colors duration-200">
+                        <span class="mr-1">{{ reaction.emoticon }}</span>
+                        <span class="text-xs">{{ reaction.count }}</span>
+                    </span>
+                    {% endfor %}
+                </div>
+                {% endif %}
+                
+                <div class="message-time">
+                    <time datetime="{{ msg.date }}">{{ msg.date }}</time>
+                </div>
+            </article>
+            {% endfor %}
+        </section>
+        {% endfor %}
+    </main>
+    
+    <script src="script.js"></script>
+</body>
+</html>
