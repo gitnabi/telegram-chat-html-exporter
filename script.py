@@ -282,7 +282,7 @@ class HTMLMessageRenderer(MessageRenderer):
         Преобразование ссылок Telegram в внутренние якорные ссылки.
 
         Преобразует: <a href="https://t.me/c/2322718547/280/283">text</a>
-        В: <a href="#msg-283" class="internal-link">text</a>
+        В: <a href="#msg-283" class="internal-link" data-msg-id="283">text</a>
         """
 
         def replace_link(match):
@@ -290,13 +290,16 @@ class HTMLMessageRenderer(MessageRenderer):
             attributes = match.group(2)  # Другие атрибуты
             link_text = match.group(3)  # Текст ссылки
 
-            # Добавляем класс internal-link к существующим атрибутам
+            # Добавляем класс internal-link и data-msg-id к существующим атрибутам
             if "class=" in attributes:
                 attributes = re.sub(
                     r'class="([^"]*)"', r'class="\1 internal-link"', attributes
                 )
             else:
                 attributes = f' class="internal-link"{attributes}'
+            
+            # Добавляем data-msg-id для JavaScript обработки
+            attributes += f' data-msg-id="{message_id}"'
 
             return f'<a href="#msg-{message_id}"{attributes}>{link_text}</a>'
 

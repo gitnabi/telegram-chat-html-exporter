@@ -20,7 +20,7 @@ pip install -r requirements.txt
 ## Быстрый старт
 
 ### 1. Получение API ключей
-1. Перейдите на https://my.telegram.org/apps
+1. Перейдите на https://my.telegram.org/apps (Перед этим выключайте VPN/proxy)
 2. Создайте новое приложение
 3. Сохраните `api_id` и `api_hash`
 
@@ -37,12 +37,15 @@ python script.py --chat "Название чата" --api-id 12345 --api-hash "y
 python script.py --chat @mychat --api-id 12345 --api-hash "your_api_hash" --output my_chat.html
 ```
 
-## Основные параметры
+## Параметры
 
 - `--chat` - ID, имя или username чата (обязательно)
 - `--api-id` - Telegram API ID (обязательно)
 - `--api-hash` - Telegram API hash (обязательно)
-- `--output` - Путь к выходному HTML файлу
-- `--skip-media` - Пропустить все медиа файлы
+- `--session` - Имя сессии для Telegram клиента (по умолчанию: telegram_export_session)
+- `--output` - Путь к выходному HTML файлу (по умолчанию: telegram_export.html)
 - `--max-file-size` - Максимальный размер файла в МБ (по умолчанию: 50)
-- `--skip-media-types` - Типы медиа для пропуска (photo, video, video_note, voice, audio, document, gif)
+- `--max-downloads` - Максимальное количество параллельных загрузок (по умолчанию: 5)
+- `--skip-media` - Пропустить все медиа файлы (флаг)
+- `--skip-media-types` - Типы медиа для пропуска (по умолчанию: []) - доступные типы: photo, video, video_note, voice, audio, document, gif
+- `--verbose`, `-v` - Включить подробное логирование (флаг)

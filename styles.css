@@ -1,17 +1,24 @@
+/* Компенсация для якорей при фиксированной навигации */
+html {
+    scroll-padding-top: 80px; /* Учитываем высоту заголовка */
+    scroll-behavior: smooth; /* плавная прокрутка для всех якорей */
+}
+
 /* Анимации и специфичные стили */
 .msg:target {
     animation: highlight 2s ease-out;
+    border-color: #58a6ff !important;
 }
 
 @keyframes highlight {
-    0% { background-color: rgba(88, 166, 255, 0.1); }
-    100% { background-color: transparent; }
-}
-
-.internal-link {
-    background: rgba(88, 166, 255, 0.1);
-    padding: 0.2em 0.4em;
-    border-radius: 0.25rem;
+    0% { 
+        background-color: rgba(88, 166, 255, 0.3);
+        transform: scale(1.02);
+    }
+    100% { 
+        background-color: transparent;
+        transform: scale(1);
+    }
 }
 
 /* Скрытие секций */
@@ -21,6 +28,10 @@
 
 /* Responsive Design */
 @media (max-width: 768px) {
+    html {
+        scroll-padding-top: 60px; /* меньший отступ для мобильных */
+    }
+    
     nav { 
         width: 100%; 
         height: auto; 
@@ -138,113 +149,23 @@ main img, main audio {
     margin: 0.5rem 0; 
 }
 
-/* Стили для служебных сообщений */
-.msg.service-message {
-    border-color: #d97706 !important;
-    background-color: rgba(217, 119, 6, 0.1) !important;
-}
-
-.service-indicator {
-    background: rgba(217, 119, 6, 0.2);
-    border: 1px solid #d97706;
-    color: #fbbf24;
-}
-
-/* Стили для пропущенных медиа */
-.msg.skipped-media {
-    border-color: #ea580c !important;
-    background-color: rgba(234, 88, 12, 0.1) !important;
-}
-
-.skip-indicator {
-    background: rgba(234, 88, 12, 0.2);
-    border: 1px solid #ea580c;
-    color: #fb923c;
-}
-
 /* Стили для реплаев */
-.msg.reply-message {
-    border-left: 4px solid #58a6ff;
-    padding-left: 1.25rem;
-}
-
 .reply-indicator {
-    background: rgba(88, 166, 255, 0.2);
-    border: 1px solid #58a6ff;
-    color: #93c5fd;
+    background: rgba(139, 148, 158, 0.1);
+    border: 1px solid rgba(139, 148, 158, 0.3);
+    color: #8b949e;
 }
 
 .reply-indicator a {
-    color: #60a5fa;
+    color: #8b949e;
     text-decoration: none;
     font-weight: 500;
+    transition: color 0.2s ease;
 }
 
 .reply-indicator a:hover {
-    color: #93c5fd;
+    color: #c9d1d9;
     text-decoration: underline;
-}
-
-/* Анимация для переходов по ссылкам на сообщения */
-.msg:target {
-    animation: highlight 2s ease-out;
-    border-color: #58a6ff !important;
-}
-
-@keyframes highlight {
-    0% { 
-        background-color: rgba(88, 166, 255, 0.3);
-        transform: scale(1.02);
-    }
-    100% { 
-        background-color: transparent;
-        transform: scale(1);
-    }
-}
-
-/* Улучшенные стили для индикаторов */
-.message-indicator {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.5rem;
-    border-radius: 0.375rem;
-    font-size: 0.875rem;
-    margin-bottom: 0.75rem;
-}
-
-.message-indicator .icon {
-    font-size: 1rem;
-    flex-shrink: 0;
-}
-
-.message-indicator .label {
-    font-weight: 600;
-}
-
-/* Responsive улучшения для индикаторов */
-@media (max-width: 768px) {
-    .message-indicator {
-        padding: 0.375rem;
-        font-size: 0.8rem;
-    }
-    
-    .message-indicator .icon {
-        font-size: 0.9rem;
-    }
-}
-
-/* Стили для времени сообщения в стиле Telegram */
-.msg time {
-    opacity: 0.7;
-    font-size: 0.75rem;
-    color: #8b949e;
-    font-weight: 400;
-    transition: opacity 0.2s ease;
-}
-
-.msg:hover time {
-    opacity: 1;
 }
 
 /* Улучшенное позиционирование времени */
@@ -263,6 +184,12 @@ main img, main audio {
     color: #8b949e;
     font-weight: 500;
     letter-spacing: 0.025em;
+    opacity: 0.7;
+    transition: opacity 0.2s ease;
+}
+
+.msg:hover .message-time time {
+    opacity: 1;
 }
 
 /* Responsive стили для времени */
@@ -271,4 +198,34 @@ main img, main audio {
         font-size: 0.65rem;
         padding: 0.2rem 0.4rem;
     }
+}
+
+/* Стили для выделения сообщений при навигации */
+.message-highlight {
+    background-color: rgba(88, 166, 255, 0.15) !important;
+    border-left: 3px solid #58a6ff !important;
+    padding-left: 12px !important;
+    margin-left: -15px !important;
+    transform: scale(1.01);
+    box-shadow: 0 0 0 2px rgba(88, 166, 255, 0.3) !important;
+}
+
+/* Плавные переходы для выделения */
+.msg {
+    transition: all 0.3s ease;
+}
+
+/* Стили для внутренних ссылок */
+.internal-link {
+    background: rgba(88, 166, 255, 0.1);
+    padding: 0.2em 0.4em;
+    border-radius: 0.25rem;
+    border: 1px solid rgba(88, 166, 255, 0.3);
+    transition: all 0.2s ease;
+}
+
+.internal-link:hover {
+    background: rgba(88, 166, 255, 0.2);
+    border-color: #58a6ff;
+    text-decoration: none;
 }

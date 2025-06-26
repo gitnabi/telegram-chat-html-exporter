@@ -76,9 +76,9 @@
                 {% endif %}
                 
                 {% if msg.is_reply and msg.reply_to_msg_id %}
-                <div class="mb-3 p-2 bg-blue-800/30 border border-blue-600 rounded text-blue-200 text-sm">
+                <div class="reply-indicator mb-3 p-2 rounded text-sm">
                     <span class="font-semibold">↩️ Ответ на сообщение:</span> 
-                    <a href="#msg-{{ msg.reply_to_msg_id }}" class="text-blue-400 hover:text-blue-300 underline">#{{ msg.reply_to_msg_id }}</a>
+                    <a href="#msg-{{ msg.reply_to_msg_id }}" class="internal-link">#{{ msg.reply_to_msg_id }}</a>
                 </div>
                 {% endif %}
                 
