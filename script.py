@@ -20,6 +20,7 @@ from datetime import datetime
 from enum import Enum
 from pathlib import Path
 from typing import Any, AsyncIterator, Dict, List, Optional, Set, Tuple
+from zoneinfo import ZoneInfo
 
 from jinja2 import Environment, FileSystemLoader
 from telethon import TelegramClient, errors, utils  # type: ignore[import-untyped]
@@ -148,10 +149,13 @@ class ExportConfig:
     chat_identifier: str
     output_path: Path
     skip_media_types: Set[str] = field(default_factory=set)
+    excluded_topics: Set[str] = field(default_factory=set)
+    included_topics: Set[str] = field(default_factory=set)
     max_file_size_mb: int = Constants.DEFAULT_MAX_FILE_SIZE_MB
     date_format: str = "%Y-%m-%d %H:%M:%S"
     max_concurrent_downloads: int = Constants.MAX_CONCURRENT_DOWNLOADS
     progress_log_interval: int = Constants.PROGRESS_LOG_INTERVAL
+    timezone: ZoneInfo = field(default_factory=lambda: ZoneInfo("Europe/Moscow"))
 
 
 @dataclass
@@ -258,9 +262,34 @@ class MessageRenderer(ABC):
 class HTMLMessageRenderer(MessageRenderer):
     """HTML рендерер сообщений."""
 
-    # Паттерн для ссылок Telegram
-    TELEGRAM_LINK_PATTERN = re.compile(
-        r'<a\s+href="https://t\.me/c/\d+/\d+/(\d+)"([^>]*)>(.*?)</a>',
+    def __init__(self, current_chat_id: Optional[int] = None, is_forum: bool = False):
+        """
+        Инициализация рендерера.
+        
+        Args:
+            current_chat_id: ID текущего обрабатываемого чата
+            is_forum: Является ли чат форумом
+        """
+        self.current_chat_id = current_chat_id
+        self.is_forum = is_forum
+
+    # Паттерн для ссылок на сообщения в форуме: /c/CHAT_ID/TOPIC_ID/MESSAGE_ID (3 числа)
+    FORUM_MESSAGE_LINK_PATTERN = re.compile(
+        r'<a\s+href="https://t\.me/c/(\d+)/(\d+)/(\d+)(?:\?[^"]*)??"([^>]*)>(.*?)</a>',
+        re.IGNORECASE | re.DOTALL,
+    )
+
+    # Паттерн для ссылок на топики в форуме: /c/CHAT_ID/TOPIC_ID (2 числа, но не сообщение)
+    # Используем отрицательный просмотр вперед, чтобы убедиться, что после второго числа нет третьего
+    FORUM_TOPIC_LINK_PATTERN = re.compile(
+        r'<a\s+href="https://t\.me/c/(\d+)/(\d+)(?!/\d+)(?:\?[^"]*)??"([^>]*)>(.*?)</a>',
+        re.IGNORECASE | re.DOTALL,
+    )
+
+    # Паттерн для ссылок на сообщения в обычном чате: /c/CHAT_ID/MESSAGE_ID (2 числа, но не форум)
+    # Этот паттерн будет использоваться только в обычных чатах
+    REGULAR_MESSAGE_LINK_PATTERN = re.compile(
+        r'<a\s+href="https://t\.me/c/(\d+)/(\d+)(?:\?[^"]*)??"([^>]*)>(.*?)</a>',
         re.IGNORECASE | re.DOTALL,
     )
 
@@ -280,30 +309,98 @@ class HTMLMessageRenderer(MessageRenderer):
     def _transform_telegram_links(self, html_content: str) -> str:
         """
         Преобразование ссылок Telegram в внутренние якорные ссылки.
-
-        Преобразует: <a href="https://t.me/c/2322718547/280/283">text</a>
-        В: <a href="#msg-283" class="internal-link" data-msg-id="283">text</a>
+        
+        Обрабатывает три типа ссылок:
+        1. https://t.me/c/CHAT_ID/TOPIC_ID/MESSAGE_ID - ссылка на сообщение в форумном чате
+        2. https://t.me/c/CHAT_ID/MESSAGE_ID - ссылка на сообщение в обычном чате  
+        3. https://t.me/c/CHAT_ID/TOPIC_ID - ссылка на топик в форумном чате
+        
+        Ссылки на другие чаты (с отличающимся chat_id) остаются внешними.
         """
+        if self.is_forum:
+            # В форумном чате сначала обрабатываем ссылки на сообщения (с MESSAGE_ID)
+            # затем ссылки на топики (без MESSAGE_ID)
+            html_content = self.FORUM_MESSAGE_LINK_PATTERN.sub(self._replace_forum_message_link, html_content)
+            html_content = self.FORUM_TOPIC_LINK_PATTERN.sub(self._replace_forum_topic_link, html_content)
+            return html_content
+        else:
+            # В обычном чате обрабатываем только ссылки на сообщения
+            return self.REGULAR_MESSAGE_LINK_PATTERN.sub(self._replace_regular_message_link, html_content)
 
-        def replace_link(match):
-            message_id = match.group(1)  # ID сообщения
-            attributes = match.group(2)  # Другие атрибуты
-            link_text = match.group(3)  # Текст ссылки
+    def _replace_forum_message_link(self, match):
+        """Обработка ссылок на сообщения в форумном чате."""
+        chat_id = int(match.group(1))      # CHAT_ID
+        topic_id = match.group(2)          # TOPIC_ID
+        message_id = match.group(3)        # MESSAGE_ID
+        attributes = match.group(4)        # Атрибуты
+        link_text = match.group(5)         # Текст ссылки
+        
+        # Проверяем, относится ли ссылка к текущему чату
+        if self.current_chat_id and chat_id != self.current_chat_id:
+            # Оставляем как внешнюю ссылку
+            return match.group(0)
+        
+        # Добавляем класс internal-link к существующим атрибутам
+        if "class=" in attributes:
+            attributes = re.sub(
+                r'class="([^"]*)"', r'class="\1 internal-link"', attributes
+            )
+        else:
+            attributes = f' class="internal-link"{attributes}'
+        
+        # Ссылка на сообщение в форуме: /c/CHAT_ID/TOPIC_ID/MESSAGE_ID
+        attributes += f' data-msg-id="{message_id}" data-topic-id="{topic_id}"'
+        return f'<a href="#msg-{message_id}"{attributes}>{link_text}</a>'
 
-            # Добавляем класс internal-link и data-msg-id к существующим атрибутам
-            if "class=" in attributes:
-                attributes = re.sub(
-                    r'class="([^"]*)"', r'class="\1 internal-link"', attributes
-                )
-            else:
-                attributes = f' class="internal-link"{attributes}'
-            
-            # Добавляем data-msg-id для JavaScript обработки
-            attributes += f' data-msg-id="{message_id}"'
+    def _replace_forum_topic_link(self, match):
+        """Обработка ссылок на топики в форумном чате."""
+        chat_id = int(match.group(1))      # CHAT_ID
+        topic_id = match.group(2)          # TOPIC_ID
+        attributes = match.group(3)        # Атрибуты
+        link_text = match.group(4)         # Текст ссылки
+        
+        # Проверяем, относится ли ссылка к текущему чату
+        if self.current_chat_id and chat_id != self.current_chat_id:
+            # Оставляем как внешнюю ссылку
+            return match.group(0)
+        
+        # Добавляем класс internal-link к существующим атрибутам
+        if "class=" in attributes:
+            attributes = re.sub(
+                r'class="([^"]*)"', r'class="\1 internal-link"', attributes
+            )
+        else:
+            attributes = f' class="internal-link"{attributes}'
+        
+        # Ссылка на топик в форуме: /c/CHAT_ID/TOPIC_ID
+        attributes += f' data-topic-id="{topic_id}"'
+        return f'<a href="#topic-{topic_id}"{attributes}>{link_text}</a>'
 
-            return f'<a href="#msg-{message_id}"{attributes}>{link_text}</a>'
-
-        return self.TELEGRAM_LINK_PATTERN.sub(replace_link, html_content)
+    def _replace_regular_message_link(self, match):
+        """Обработка ссылок на сообщения в обычном чате."""
+        chat_id = int(match.group(1))      # CHAT_ID
+        message_id = match.group(2)        # MESSAGE_ID
+        attributes = match.group(3)        # Атрибуты
+        link_text = match.group(4)         # Текст ссылки
+        
+        # Проверяем, относится ли ссылка к текущему чату
+        if self.current_chat_id and chat_id != self.current_chat_id:
+            # Оставляем как внешнюю ссылку
+            return match.group(0)
+        
+        # Добавляем класс internal-link к существующим атрибутам
+        if "class=" in attributes:
+            attributes = re.sub(
+                r'class="([^"]*)"', r'class="\1 internal-link"', attributes
+            )
+        else:
+            attributes = f' class="internal-link"{attributes}'
+        
+        # Добавляем data-msg-id для JavaScript обработки
+        attributes += f' data-msg-id="{message_id}"'
+        
+        # Ссылка на сообщение в обычном чате: /c/CHAT_ID/MESSAGE_ID
+        return f'<a href="#msg-{message_id}"{attributes}>{link_text}</a>'
 
 
 class MediaProcessor:
@@ -566,12 +663,15 @@ class TelegramAPIClient:
                 raise ChatResolutionError("Выбор чата отменен пользователем")
 
     @retry_on_error()
-    async def load_forum_topics(self, entity: TypePeer) -> Dict[int, TopicData]:
-        """Загрузка топиков форума если доступны."""
+    async def load_forum_topics(self, entity: TypePeer) -> Tuple[Dict[int, TopicData], bool]:
+        """Загрузка топиков форума если доступны. Возвращает (топики, is_forum)."""
         if not self.client:
             raise TelegramAPIError("Клиент не инициализирован")
 
         topics = {}
+        is_forum = False
+        excluded_count = 0
+        
         try:
             response = await self.client(
                 GetForumTopicsRequest(
@@ -583,23 +683,59 @@ class TelegramAPIClient:
                 )
             )
 
+            is_forum = True
+            logger.info("Чат является форумом")
+
             for topic in response.topics:
-                topics[topic.id] = TopicData(id=topic.id, title=topic.title)
+                # Проверяем фильтрацию топиков (белый и черный списки)
+                if self._should_include_topic(topic.title):
+                    topics[topic.id] = TopicData(id=topic.id, title=topic.title)
+                else:
+                    excluded_count += 1
+                    logger.info(f"Топик '{topic.title}' (ID: {topic.id}) исключен из экспорта")
 
             logger.info(f"Загружено {len(topics)} топиков форума")
+            if excluded_count > 0:
+                logger.info(f"Исключено топиков: {excluded_count}")
 
         except errors.RPCError:
             logger.info("Чат не является форумом или нет доступа к топикам")
             # Создаем топик по умолчанию для обычных чатов
             topics[1] = TopicData(id=1, title="Общий")
 
-        return topics
+        return topics, is_forum
 
-    def iter_messages(self, entity: TypePeer) -> AsyncIterator[Message]:
+    def _should_include_topic(self, topic_title: str) -> bool:
+        """Проверка, должен ли топик быть включен в экспорт."""
+        # Если задан белый список, проверяем включение
+        if self.config.included_topics:
+            for included_topic in self.config.included_topics:
+                if topic_title.lower() == included_topic.lower():
+                    break
+            else:
+                # Топик не найден в белом списке
+                return False
+        
+        # Если задан черный список, проверяем исключение
+        if self.config.excluded_topics:
+            for excluded_topic in self.config.excluded_topics:
+                if topic_title.lower() == excluded_topic.lower():
+                    return False
+        
+        # По умолчанию включаем все топики
+        return True
+
+    def iter_messages(self, entity: TypePeer, topic_id: Optional[int] = None) -> AsyncIterator[Message]:
         """Итератор сообщений."""
         if not self.client:
             raise TelegramAPIError("Клиент не инициализирован")
-        return self.client.iter_messages(entity, reverse=False)
+        
+        if topic_id is not None:
+            # Итерируемся по конкретному топику
+            return self.client.iter_messages(entity, reverse=False, reply_to=topic_id)
+        else:
+            # Итерируемся по всем сообщениям
+            return self.client.iter_messages(entity, reverse=False)
 
 
 class MessageProcessor:
@@ -628,6 +764,12 @@ class MessageProcessor:
             return f"{display_name} (ID: {sender.id}, @{sender.username})"
         else:
             return f"{display_name} (ID: {sender.id})"
+
+    def _format_message_date(self, msg_date: datetime) -> str:
+        """Форматирование времени сообщения с учетом таймзоны."""
+        # Конвертируем UTC время в указанную таймзону
+        localized_date = msg_date.replace(tzinfo=ZoneInfo("UTC")).astimezone(self.config.timezone)
+        return localized_date.strftime(self.config.date_format)
 
     def _analyze_service_message(self, msg: Message) -> Tuple[bool, str]:
         """Анализ служебного сообщения и возврат описания."""
@@ -731,7 +873,6 @@ class MessageProcessor:
 
         # Проверяем наличие реакций в сообщении
         if not hasattr(msg, "reactions") or not msg.reactions:
-            logger.debug(f"Сообщение {msg.id}: нет реакций")
             return reactions
 
         # Получаем список результатов реакций
@@ -770,7 +911,7 @@ class MessageProcessor:
         return reactions
 
     async def process_messages_streaming(
-        self, messages_iter: AsyncIterator[Message], topics: Dict[int, TopicData]
+        self, messages_iter: AsyncIterator[Message], topics: Dict[int, TopicData], topic_id: int
     ) -> Dict[int, TopicData]:
         """Обработка сообщений потоком с прогресс-баром."""
         # Сначала подсчитаем общее количество сообщений
@@ -796,9 +937,9 @@ class MessageProcessor:
         with tqdm(total=len(all_items), desc="Обработка сообщений") as pbar:
             for item_type, timestamp, data in all_items:
                 if item_type == "group":
-                    await self._process_message_group(data, topics)
+                    await self._process_message_group(data, topics, topic_id)
                 else:
-                    await self._process_single_message(data, topics)
+                    await self._process_single_message(data, topics, topic_id)
                 pbar.update(1)
 
         logger.info(
@@ -850,14 +991,13 @@ class MessageProcessor:
         return all_items
 
     async def _process_message_group(
-        self, message_group: List[Message], topics: Dict[int, TopicData]
+        self, message_group: List[Message], topics: Dict[int, TopicData], topic_id: int
     ):
         """Обработка группы сообщений (альбом)."""
         if not message_group:
             return
 
         first_msg = message_group[0]
-        topic_id = self._get_topic_id(first_msg)
 
         # Убеждаемся что топик существует
         if topic_id not in topics:
@@ -879,7 +1019,7 @@ class MessageProcessor:
         # Создаем единое сообщение для всей группы
         message_data = MessageData(
             id=first_msg.id,
-            date=first_msg.date.strftime(self.config.date_format),
+            date=self._format_message_date(first_msg.date),
             sender=self._format_sender_name(first_msg.sender),
             html_content="<br>".join(combined_content),
             topic_id=topic_id,
@@ -893,10 +1033,8 @@ class MessageProcessor:
 
         topics[topic_id].messages.append(message_data)
 
-    async def _process_single_message(self, msg: Message, topics: Dict[int, TopicData]):
+    async def _process_single_message(self, msg: Message, topics: Dict[int, TopicData], topic_id: int):
         """Обработка одиночного сообщения."""
-        topic_id = self._get_topic_id(msg)
-
         # Убеждаемся что топик существует
         if topic_id not in topics:
             topics[topic_id] = TopicData(id=topic_id, title=f"Топик {topic_id}")
@@ -911,7 +1049,7 @@ class MessageProcessor:
 
         message_data = MessageData(
             id=msg.id,
-            date=msg.date.strftime(self.config.date_format),
+            date=self._format_message_date(msg.date),
             sender=self._format_sender_name(msg.sender),
             html_content=content,
             topic_id=topic_id,
@@ -941,16 +1079,6 @@ class MessageProcessor:
 
         return "<br>".join(filter(None, content_parts))
 
-    def _get_topic_id(self, msg: Message) -> int:
-        """Извлечение ID топика из сообщения."""
-        reply_to = getattr(msg, "reply_to", None)
-        if reply_to and getattr(reply_to, "forum_topic", False):
-            return (
-                getattr(reply_to, "reply_to_top_id", None)
-                or getattr(reply_to, "reply_to_msg_id", None)
-                or 1
-            )
-        return 1
 
 
 class HTMLRenderer:
@@ -1060,7 +1188,8 @@ class ExportOrchestrator:
         # Настройка рендерера
         template_path = Path(__file__).parent / "template.html"
         self.html_renderer = HTMLRenderer(template_path)
-        self.message_renderer = HTMLMessageRenderer()
+        # message_renderer будет создан в export_chat после получения информации о чате
+        self.message_renderer = None
 
     def _validate_config(self) -> None:
         """Валидация конфигурации."""
@@ -1092,22 +1221,47 @@ class ExportOrchestrator:
             )
             media_processor = MediaProcessor(media_dir, media_config)
 
-            # Создание процессора сообщений
-            message_processor = MessageProcessor(
-                self.config, media_processor, self.message_renderer
-            )
-
             async with self.telegram_client as client:
                 # Разрешение чата по ID, имени или никнейму
                 entity = await client.resolve_chat(self.config.chat_identifier)
 
                 # Загрузка топиков форума
-                topics = await client.load_forum_topics(entity)
+                topics, is_forum = await client.load_forum_topics(entity)
+
+                # Создание рендерера сообщений с правильными параметрами
+                self.message_renderer = HTMLMessageRenderer(
+                    current_chat_id=entity.id, 
+                    is_forum=is_forum
+                )
+
+                # Создание процессора сообщений
+                message_processor = MessageProcessor(
+                    self.config, media_processor, self.message_renderer
+                )
 
                 # Обработка сообщений
-                topics = await message_processor.process_messages_streaming(
-                    client.iter_messages(entity), topics
-                )
+                if is_forum:
+                    # Если чат является форумом, итерируемся отдельно по каждому топику
+                    logger.info("Обработка форума: итерация по топикам")
+                    
+                    processed_topics = {}
+                    for topic_id, topic_data in topics.items():
+                        logger.info(f"🔄 ═══ Обработка топика: {topic_data.title} (ID: {topic_id}) ═══")
+                        topic_messages_iter = client.iter_messages(entity, topic_id)
+                        # Создаем временный словарь для обработки этого топика
+                        temp_topics = {topic_id: TopicData(id=topic_id, title=topic_data.title)}
+                        processed_temp_topics = await message_processor.process_messages_streaming(
+                            topic_messages_iter, temp_topics, topic_id
+                        )
+                        # Копируем результат в основной словарь
+                        processed_topics[topic_id] = processed_temp_topics[topic_id]
+                    topics = processed_topics
+                else:
+                    # Если чат обычный, итерируемся по всем сообщениям
+                    logger.info("Обработка обычного чата: итерация по всем сообщениям")
+                    topics = await message_processor.process_messages_streaming(
+                        client.iter_messages(entity), topics, topic_id=1
+                    )
 
                 # Рендеринг HTML
                 html_content = self.html_renderer.render(entity, topics)
@@ -1232,6 +1386,30 @@ def create_argument_parser() -> argparse.ArgumentParser:
     )
 
     parser.add_argument(
+        "--exclude-topics",
+        nargs="*",
+        default=[],
+        help="Названия топиков для исключения из экспорта (например: --exclude-topics \"Спам\" \"Реклама\"). "
+             "Нельзя использовать одновременно с --include-topics",
+    )
+
+    parser.add_argument(
+        "--include-topics",
+        nargs="*",
+        default=[],
+        help="Названия топиков для включения в экспорт (только указанные топики будут экспортированы). "
+             "Нельзя использовать одновременно с --exclude-topics",
+    )
+
+    parser.add_argument(
+        "--timezone", "-tz",
+        type=str,
+        default="Europe/Moscow",
+        help="Таймзона для отображения времени сообщений (по умолчанию: Europe/Moscow). "
+             "Примеры: Europe/Moscow, UTC, America/New_York, Asia/Tokyo"
+    )
+
+    parser.add_argument(
         "--verbose", "-v", action="store_true", help="Включить подробное логирование"
     )
 
@@ -1242,6 +1420,20 @@ def validate_and_create_config(args: argparse.Namespace) -> ExportConfig:
     """Валидация аргументов и создание конфигурации."""
     if args.verbose:
         logging.getLogger().setLevel(logging.DEBUG)
+
+    # Проверяем, что не заданы одновременно exclude-topics и include-topics
+    if args.exclude_topics and args.include_topics:
+        raise ValidationError(
+            "Нельзя одновременно использовать --exclude-topics и --include-topics. "
+            "Используйте либо белый список (--include-topics), либо черный список (--exclude-topics)."
+        )
+
+    # Валидация таймзоны
+    try:
+        timezone = ZoneInfo(args.timezone)
+        logger.info(f"Используется таймзона: {args.timezone}")
+    except Exception as e:
+        raise ValidationError(f"Неверная таймзона '{args.timezone}': {e}")
 
     output_path = args.output.expanduser().resolve()
 
@@ -1261,8 +1453,11 @@ def validate_and_create_config(args: argparse.Namespace) -> ExportConfig:
         chat_identifier=args.chat,
         output_path=output_path,
         skip_media_types=skip_media_types,
+        excluded_topics=set(args.exclude_topics) if args.exclude_topics else set(),
+        included_topics=set(args.include_topics) if args.include_topics else set(),
         max_file_size_mb=args.max_file_size,
         max_concurrent_downloads=args.max_downloads,
+        timezone=timezone,
     )
 
 
