@@ -1,6 +1,9 @@
+> [!WARNING]
+> **ВАЙБ-ОРИЕНТИРОВАННАЯ РАЗРАБОТКА**
+
 # Telegram Chat HTML Exporter
 
-Навайбкоженный скрипт для экспорта Telegram чатов с поддержкой форумов в интерактивный HTML формат.
+CLI-утилита для экспорта Telegram чатов с поддержкой форумов в интерактивный HTML формат.
 
 ## Установка зависимостей
 
@@ -28,13 +31,13 @@ pip install -r requirements.txt
 
 ```bash
 # По ID чата
-python script.py --chat -1001234567890 --api-id 12345 --api-hash "your_api_hash" --output my_chat.html
+python main.py --chat -1001234567890 --api-id 12345 --api-hash "your_api_hash" --output my_chat.html
 
 # По имени чата
-python script.py --chat "Название чата" --api-id 12345 --api-hash "your_api_hash" --output my_chat.html
+python main.py --chat "Название чата" --api-id 12345 --api-hash "your_api_hash" --output my_chat.html
 
 # По username
-python script.py --chat @mychat --api-id 12345 --api-hash "your_api_hash" --output my_chat.html
+python main.py --chat @mychat --api-id 12345 --api-hash "your_api_hash" --output my_chat.html
 ```
 
 ## Параметры
@@ -48,4 +51,10 @@ python script.py --chat @mychat --api-id 12345 --api-hash "your_api_hash" --outp
 - `--max-downloads` - Максимальное количество параллельных загрузок (по умолчанию: 5)
 - `--skip-media` - Пропустить все медиа файлы (флаг)
 - `--skip-media-types` - Типы медиа для пропуска (по умолчанию: []) - доступные типы: photo, video, video_note, voice, audio, document, gif
+- `--exclude-topics` - Названия топиков для исключения из экспорта (например: --exclude-topics "Спам" "Реклама"). Нельзя использовать одновременно с --include-topics
+- `--include-topics` - Названия топиков для включения в экспорт (только указанные топики будут экспортированы). Нельзя использовать одновременно с --exclude-topics
+- `--timezone`, `-tz` - Таймзона для отображения времени сообщений (по умолчанию: Europe/Moscow). Примеры: Europe/Moscow, UTC, America/New_York, Asia/Tokyo
+- `--filter-include` - Фильтр включения: показывать только сообщения, содержащие хотя бы одну из указанных подстрок (например: --filter-include "python" "код" "bug"). Можно комбинировать с --filter-exclude (exclude имеет приоритет). Служебные сообщения всегда включаются независимо от фильтров
+- `--filter-exclude` - Фильтр исключения: скрывать сообщения, содержащие любую из указанных подстрок (например: --filter-exclude "спам" "реклама" "бот"). Можно комбинировать с --filter-include (exclude имеет приоритет). Служебные сообщения всегда включаются независимо от фильтров
+- `--filter-ignore-case` - Игнорировать регистр при фильтрации сообщений (по умолчанию регистр учитывается) (флаг)
 - `--verbose`, `-v` - Включить подробное логирование (флаг)
